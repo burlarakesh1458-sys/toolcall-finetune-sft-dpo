@@ -1,0 +1,22 @@
+# model weights, adapters, checkpoints, TensorBoard event files
+outputs/
+*.safetensors
+*.bin
+*.pt
+*.gguf
+checkpoint-*/
+runs/
+wandb/
+# raw dataset download (~271 MB) and Axolotl exports (regenerable)
+data/raw/
+data/axolotl/
+# python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.venv/
+venv/
+.env
+.ipynb_checkpoints/

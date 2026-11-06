@@ -1,0 +1,16 @@
+# Pinned versions used for the CPU small-scale run (Python 3.12, aarch64, torch CPU wheel).
+# CPU:  pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu && pip install -r requirements.txt
+# GPU:  pip install -r requirements.txt -r requirements-gpu.txt   (default CUDA torch from PyPI)
+torch==2.15.0
+transformers==4.57.1
+trl==0.24.0
+peft==0.17.1
+datasets==4.3.0
+accelerate==1.15.0
+numpy==2.5.4
+pandas==3.1.1
+matplotlib==3.11.2
+PyYAML==6.0.3
+requests==2.34.2
+tensorboard==2.21.0
+openai==3.46.0

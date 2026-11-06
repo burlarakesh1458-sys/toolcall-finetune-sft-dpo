@@ -1,0 +1,5 @@
+# Extra deps for the QLoRA GPU configs (not installable/usable on a CPU-only machine).
+bitsandbytes>=0.45
+# optional
+# wandb
+# axolotl  (install separately per https://docs.axolotl.ai, it pins its own torch/transformers)
