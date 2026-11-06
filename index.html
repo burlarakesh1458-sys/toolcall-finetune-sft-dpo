@@ -1,0 +1,583 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tool-Call Fine-Tuning · SFT → DPO · Rakesh Burla</title>
+<meta name="description" content="Tool-Call Fine-Tuning · SFT → DPO — AI engineering portfolio project by Rakesh Burla">
+<style>
+:root{--bg:#0b0f17;--card:#121826;--fg:#e6e9ef;--mut:#9aa4b2;--acc:#5eead4;--line:#243044}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 -apple-system,Segoe UI,Inter,Roboto,sans-serif}
+header{border-bottom:1px solid var(--line);background:linear-gradient(180deg,#0f1625,#0b0f17)}
+.wrap{max-width:960px;margin:0 auto;padding:0 20px}
+.top{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:22px 0;flex-wrap:wrap}
+.brand{font-weight:700;font-size:1.15rem}.brand small{display:block;color:var(--mut);font-weight:400;font-size:.85rem}
+.btn{display:inline-block;padding:9px 16px;border:1px solid var(--acc);color:var(--acc);border-radius:8px;text-decoration:none;font-weight:600}
+.btn:hover{background:var(--acc);color:#04201b}
+main{padding:28px 0 60px}h1,h2,h3{line-height:1.25}h1{font-size:2rem}h2{margin-top:2.2em;padding-bottom:.3em;border-bottom:1px solid var(--line)}
+a{color:var(--acc)}code{background:#1b2333;padding:.1em .35em;border-radius:5px;font-size:.92em}
+pre{background:var(--card);border:1px solid var(--line);padding:14px;border-radius:10px;overflow:auto}pre code{background:none;padding:0}
+table{border-collapse:collapse;width:100%;display:block;overflow-x:auto;margin:1em 0}th,td{border:1px solid var(--line);padding:7px 10px;text-align:left}th{background:var(--card)}
+img{max-width:100%;border-radius:10px;background:#fff}blockquote{border-left:3px solid var(--acc);margin:0;padding:.2em 1em;color:var(--mut)}
+pre.mermaid{background:#fff;color:#000}
+footer{border-top:1px solid var(--line);color:var(--mut);padding:20px 0;font-size:.9rem}
+</style></head><body>
+<header><div class="wrap top"><div class="brand">Tool-Call Fine-Tuning · SFT → DPO<small>AI engineering portfolio · Rakesh Burla</small></div>
+<div><a class="btn" href="https://github.com/burlarakesh1458-sys/toolcall-finetune-sft-dpo">View code on GitHub</a></div></div></header>
+<main class="wrap"><h1
+id="fine-tuning-for-tool-call-accuracy-prompt-baseline--lora-sft--dpo">Fine-tuning
+for tool-call accuracy: prompt baseline → LoRA SFT → DPO</h1>
+<blockquote>
+<p>Teach a language model to pick the right function
+<strong>and</strong> fill its arguments correctly — or decline when no
+tool fits — and prove the gain over the best prompt with numbers on a
+held-out test set.</p>
+</blockquote>
+<p><img src="results/cpu_small/plots/metrics_by_stage.png"
+alt="metrics by stage" /></p>
+<p><strong>Headline (measured, CPU small-scale run:
+SmolLM2-135M-Instruct, 240 training examples, 100 held-out test
+examples):</strong> LoRA SFT beat the best engineered prompt on every
+call metric — exact match 11% → 34%, JSON validity 72% → 98%, argument
+F1 20.6% → 69.8%. DPO stacked on top gave <strong>no further exact-match
+gain</strong> (34% → 34%); it removed the remaining false declines but
+did not fix the SFT model's 0% decline recall. Section 6 has the full
+table and section 7 explains why.</p>
+<p><strong>Status, stated plainly</strong></p>
+<table>
+<thead>
+<tr class="header">
+<th>What</th>
+<th>Where</th>
+<th>Executed?</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Full pipeline (data → baseline → SFT → DPO → eval → report) at small
+scale</td>
+<td><code>configs/cpu_small.yaml</code>, SmolLM2-135M-Instruct, 2-core
+CPU</td>
+<td><strong>Yes — every number below is measured from this
+run</strong></td>
+</tr>
+<tr class="even">
+<td>Strong-model reference (gpt-oss-120b via Groq, same prompt, same
+test examples)</td>
+<td><code>src/toolcall_ft/groq_reference.py</code></td>
+<td><strong>Yes</strong></td>
+</tr>
+<tr class="odd">
+<td>Qwen3-8B + QLoRA on an A100 / T4</td>
+<td><code>configs/gpu_qwen3_8b.yaml</code>,
+<code>configs/colab_t4_qwen3_8b.yaml</code></td>
+<td>Ready to run on GPU, <strong>not executed here</strong></td>
+</tr>
+<tr class="even">
+<td>Axolotl equivalents</td>
+<td><code>configs/axolotl/*.yaml</code></td>
+<td>Ready to run on GPU, <strong>not executed here</strong></td>
+</tr>
+<tr class="odd">
+<td>One-click Colab notebook</td>
+<td><code>notebooks/train_colab.ipynb</code></td>
+<td>Ready for a free T4, <strong>not executed here</strong></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="1-problem">1. Problem</h2>
+<p>Agents fail in boring ways: they call the wrong function, invent an
+argument, send <code>"5"</code> where the schema wants <code>5</code>,
+or call <em>something</em> when they should say "I can't do that". This
+project targets exactly that single step:</p>
+<pre class="text"><code>input : tool schemas (JSON) + a user request
+output: {&quot;tool&quot;: &quot;&lt;name&gt;&quot;, &quot;arguments&quot;: {...}}     # a tool applies
+        {&quot;tool&quot;: null, &quot;arguments&quot;: {}}           # no tool applies -&gt; decline</code></pre>
+<h2 id="2-why-fine-tune-instead-of-prompting">2. Why fine-tune instead
+of prompting?</h2>
+<p>Fine-tuning does not make a model generally smarter; it makes it
+<em>consistently</em> good at one well-defined contract. The test for
+whether it is worth it is simple: build the best prompt you can, measure
+it, then measure the fine-tuned model on the same held-out set. If the
+gap is not there, don't fine-tune.</p>
+<p>Here the baseline is a carefully engineered prompt: strict output
+contract, type rules, an explicit decline format, and three hand-written
+demonstrations (a call, a two-tool selection, a decline) that are
+<strong>not</strong> drawn from the dataset, so they cannot leak test
+answers. A zero-shot version of the same prompt is reported too.</p>
+<h2 id="3-pipeline">3. Pipeline</h2>
+<pre class="mermaid">flowchart LR
+    A[glaive-function-calling-v2&lt;br/&gt;112,960 raw chats&lt;br/&gt;pinned revision] --&gt; B[parse first turn&lt;br/&gt;validate schema + gold call&lt;br/&gt;dedupe, cap per tool]
+    B --&gt; C[add tool-swap negatives&lt;br/&gt;20% &#39;no tool applies&#39;]
+    C --&gt; D[(train 3,000&lt;br/&gt;val 400&lt;br/&gt;test 600)]
+    D --&gt; E0[Phase 0: baseline&lt;br/&gt;base model + few-shot prompt]
+    D --&gt; E1[Phase 1: SFT&lt;br/&gt;TRL SFTTrainer + PEFT LoRA/QLoRA&lt;br/&gt;loss on the JSON only]
+    E1 --&gt; F[sample 4 outputs / prompt&lt;br/&gt;from the SFT model]
+    F --&gt; G[auto-label chosen / rejected&lt;br/&gt;with the task scorer]
+    G --&gt; E2[Phase 2: DPO&lt;br/&gt;TRL DPOTrainer&lt;br/&gt;stacked on the SFT adapter]
+    E0 &amp; E1 &amp; E2 --&gt; H[same scorer on held-out test&lt;br/&gt;JSON validity, exact match,&lt;br/&gt;tool acc, argument F1, refusal]
+    H --&gt; I[report: table + curves]</pre>
+<h2 id="4-dataset-card-short-version--full-card-in-datadata_cardmd">4.
+Dataset card (short version — full card in <a
+href="https://github.com/burlarakesh1458-sys/toolcall-finetune-sft-dpo/blob/main/data/DATA_CARD.md"><code>data/DATA_CARD.md</code></a>)</h2>
+<ul>
+<li><strong>Source:</strong> <a
+href="https://huggingface.co/datasets/glaiveai/glaive-function-calling-v2"><code>glaiveai/glaive-function-calling-v2</code></a>
+@ <code>e7f4b64</code>, Apache-2.0.
+(<code>Salesforce/xlam-function-calling-60k</code> was the first choice
+but is gated.)</li>
+<li><strong>Cleaning:</strong> 112,960 raw records → drop no-tool
+prompts (34,598), duplicates (44,314), clarifying-question turns
+(25,520), unparseable calls (1,663), invalid gold calls / schemas (≈450)
+→ 6,217 unique calls + 217 natural declines → cap 40 per tool →
+<strong>4,000 examples</strong> (3,200 calls, 217 natural declines, 583
+synthetic tool-swap negatives).</li>
+<li><strong>Splits:</strong> 3,000 / 400 / 600, stratified, 20% declines
+in each, no query shared across splits (asserted).</li>
+<li><strong>Gold-label validation:</strong> the called tool must exist,
+required args present, no unknown args, JSON types and enums respected —
+39 gold calls failed this and were dropped.</li>
+</ul>
+<h2 id="5-metrics">5. Metrics</h2>
+<p>All computed by one scorer (<code>src/toolcall_ft/scorer.py</code>,
+unit-tested):</p>
+<table>
+<thead>
+<tr class="header">
+<th>Metric</th>
+<th>Definition</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>JSON valid</td>
+<td>output is exactly one JSON object <code>{"tool", "arguments"}</code>
+(code fences tolerated, prose is not)</td>
+</tr>
+<tr class="even">
+<td>Exact match</td>
+<td>right tool <strong>and</strong> the full argument dict
+(case/whitespace-insensitive strings, 5 == 5.0)</td>
+</tr>
+<tr class="odd">
+<td>Function-name acc</td>
+<td>right tool name (<code>null</code> == <code>null</code> counts)</td>
+</tr>
+<tr class="even">
+<td>Argument F1</td>
+<td>micro-F1 over (key, value) pairs on examples whose gold is a
+call</td>
+</tr>
+<tr class="odd">
+<td>Call/decline acc ("refusal correctness")</td>
+<td>the call-vs-decline decision is right; invalid output counts as
+wrong</td>
+</tr>
+<tr class="even">
+<td>Decline recall / False-decline rate</td>
+<td>declines on gold-decline examples / declines on gold-call
+examples</td>
+</tr>
+</tbody>
+</table>
+<h2 id="6-results--cpu-small-scale-run-measured">6. Results — CPU
+small-scale run (measured)</h2>
+<p><strong>Setup actually executed:</strong> SmolLM2-135M-Instruct, LoRA
+r=16 on all attention + MLP projections (4.88M trainable parameters,
+3.5% of 139M), 240 training examples (1 epoch, effective batch 8, 30
+optimizer steps), 24 validation examples, evaluated with greedy decoding
+on the <strong>first 100 examples of the held-out test split</strong>
+(74 gold calls, 26 gold declines). Every stage — and the gpt-oss-120b
+reference — is scored on exactly those 100 ids by the same scorer. This
+is a small-scale CPU run that proves the pipeline end to end; it is not
+the Qwen3-8B result the GPU configs are built for.</p>
+<table>
+<thead>
+<tr class="header">
+<th>Stage</th>
+<th style="text-align: right;">n</th>
+<th style="text-align: right;">JSON valid</th>
+<th style="text-align: right;">Function-name acc</th>
+<th style="text-align: right;">Exact match</th>
+<th style="text-align: right;">Argument F1</th>
+<th style="text-align: right;">Call/decline acc</th>
+<th style="text-align: right;">Decline recall</th>
+<th style="text-align: right;">False-decline rate</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Base, zero-shot prompt</td>
+<td style="text-align: right;">100</td>
+<td style="text-align: right;">0.0%</td>
+<td style="text-align: right;">0.0%</td>
+<td style="text-align: right;">0.0%</td>
+<td style="text-align: right;">0.0%</td>
+<td style="text-align: right;">0.0%</td>
+<td style="text-align: right;">0.0%</td>
+<td style="text-align: right;">0.0%</td>
+</tr>
+<tr class="even">
+<td>Base, engineered few-shot prompt</td>
+<td style="text-align: right;">100</td>
+<td style="text-align: right;">72.0%</td>
+<td style="text-align: right;">22.0%</td>
+<td style="text-align: right;">11.0%</td>
+<td style="text-align: right;">20.6%</td>
+<td style="text-align: right;">32.0%</td>
+<td style="text-align: right;">11.5%</td>
+<td style="text-align: right;">43.2%</td>
+</tr>
+<tr class="odd">
+<td><strong>SFT (LoRA)</strong></td>
+<td style="text-align: right;">100</td>
+<td style="text-align: right;"><strong>98.0%</strong></td>
+<td style="text-align: right;">69.0%</td>
+<td style="text-align: right;"><strong>34.0%</strong></td>
+<td style="text-align: right;">69.8%</td>
+<td style="text-align: right;">69.0%</td>
+<td style="text-align: right;">0.0%</td>
+<td style="text-align: right;">4.1%</td>
+</tr>
+<tr class="even">
+<td>SFT + DPO</td>
+<td style="text-align: right;">100</td>
+<td style="text-align: right;">96.0%</td>
+<td style="text-align: right;"><strong>71.0%</strong></td>
+<td style="text-align: right;"><strong>34.0%</strong></td>
+<td style="text-align: right;"><strong>70.6%</strong></td>
+<td style="text-align: right;"><strong>71.0%</strong></td>
+<td style="text-align: right;">0.0%</td>
+<td style="text-align: right;"><strong>0.0%</strong></td>
+</tr>
+<tr class="odd">
+<td>Reference: gpt-oss-120b (Groq API), few-shot</td>
+<td style="text-align: right;">100</td>
+<td style="text-align: right;">100.0%</td>
+<td style="text-align: right;">99.0%</td>
+<td style="text-align: right;">92.0%</td>
+<td style="text-align: right;">93.6%</td>
+<td style="text-align: right;">99.0%</td>
+<td style="text-align: right;">100.0%</td>
+<td style="text-align: right;">1.4%</td>
+</tr>
+</tbody>
+</table>
+<p>(<code>results/cpu_small/results_table.md</code>, raw numbers in
+<code>metrics_*.json</code>, every prediction in
+<code>predictions_*.jsonl</code>.)</p>
+<p><strong>What the numbers say</strong></p>
+<ul>
+<li><strong>SFT is the big win.</strong> Against the best prompt for the
+same model, LoRA SFT on just 240 examples took JSON validity from 72% to
+98%, exact match from 11% to 34% (3.1×), function-name accuracy from 22%
+to 69%, argument F1 from 20.6% to 69.8%, and cut the false-decline rate
+from 43.2% to 4.1%. The zero-shot base model produced no valid output at
+all (it echoed the schema or wrapped JSON in prose), which is why the
+few-shot prompt is the real baseline.</li>
+<li><strong>SFT never learned to decline.</strong> Decline recall is
+0/26 even though 47 of the 240 training examples (19.6%) are declines:
+the fine-tuned model always calls <em>something</em>. Most of its
+"Call/decline acc" errors are exactly those 26 cases.</li>
+<li><strong>DPO gave no exact-match gain at this scale — stated
+plainly.</strong> 79 of 100 predictions are byte-identical to SFT. Net
+changes: false declines 3 → 0, function-name accuracy +2 points,
+argument F1 +0.8 points, but two outputs that were valid JSON became
+invalid — both repetition loops cut off at the token limit, one of them
+previously an exact match. So JSON validity fell 98% → 96% and exact
+match stayed at 34%. On 100 examples a 2-point move is two examples, so
+none of these SFT→DPO differences is statistically meaningful.</li>
+<li><strong>Why DPO moved the needle the way it did.</strong> The
+scorer-labelled pairs came from 32 fresh training prompts × 4 samples
+(temperature 1.0) of the SFT model: 29 pairs, 14 of them gold-anchored
+(no sample was exact). 16 of the 29 rejected answers were invalid JSON
+and 8 were false declines, but only 2 pairs had a decline as the
+<em>chosen</em> answer. So the preference data taught "don't decline
+when a tool fits" (false declines did go to 0) and gave almost no signal
+for "decline when nothing fits" — the SFT model's real weakness. The fix
+is in the data, not the optimizer (see Future work).</li>
+<li><strong>The gap to a frontier model is still large</strong> (34% vs
+92% exact match). Of gpt-oss-120b's 8 misses, 7 are dataset label
+conventions (empty-string fillers, invented defaults, dates frozen in
+2022), not model errors — see <a
+href="https://github.com/burlarakesh1458-sys/toolcall-finetune-sft-dpo/blob/main/results/cpu_small/groq_error_analysis.md"><code>results/cpu_small/groq_error_analysis.md</code></a>.
+Fine-tuning learns those conventions; prompting cannot.</li>
+</ul>
+<p><strong>Training curves</strong></p>
+<p><img src="results/cpu_small/plots/sft_loss.png" alt="SFT loss" /></p>
+<p>SFT: completion-only cross-entropy fell from 0.844 (step 2) to 0.135
+(step 30); validation loss 0.318 → 0.152 → 0.121 → 0.119 → 0.116 at
+steps 6/12/18/24/30, with validation token accuracy 90.7% → 96.0%.
+Validation loss kept falling and never turned up, so one epoch did not
+overfit. (Steps 21–30 ran after resuming from <code>checkpoint-20</code>
+when the sandbox rebooted.)</p>
+<p><img src="results/cpu_small/plots/dpo_curves.png"
+alt="DPO curves" /></p>
+<p>DPO (β = 0.1, LR 5e-5, effective batch 2, 15 steps, 420 s): the loss
+starts at ln 2 ≈ 0.693 as expected when the policy equals the reference,
+and the chosen-vs-rejected margin grows to +0.16 by step 14 (loss
+0.613). Step 15 is a single leftover pair, so its spike is noise.
+Margins this small mean the policy barely moved from the SFT reference,
+which matches the 79/100 identical predictions.</p>
+<p><strong>Compute:</strong> 2 vCPU aarch64, 7.8 GB RAM, no GPU. SFT ≈
+48 min wall-clock in total (steps 1–20 ≈ 21 min, steps 21–30 ≈ 28 min
+under heavy CPU steal), sampling for DPO pairs 33 min, DPO training 7
+min, each 100-example evaluation ≈ 10–18 min.</p>
+<h2 id="7-what-went-wrong-and-how-i-iterated">7. What went wrong and how
+I iterated</h2>
+<p>Every item below actually happened during this project; the fix is in
+the code or config.</p>
+<table>
+<thead>
+<tr class="header">
+<th>#</th>
+<th>What went wrong</th>
+<th>What I saw</th>
+<th>What I changed</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>1</td>
+<td><strong>First-choice dataset was gated</strong></td>
+<td><code>Salesforce/xlam-function-calling-60k</code> returned HTTP 401
+from a script</td>
+<td>Switched to <code>glaiveai/glaive-function-calling-v2</code>, pinned
+to a commit hash, and wrote a stricter parser/validator because glaive
+is messier (single-quoted <code>arguments</code> strings,
+clarifying-question turns, invalid gold calls)</td>
+</tr>
+<tr class="even">
+<td>2</td>
+<td><strong>Messy labels</strong></td>
+<td>25,520 first turns were clarifying questions, 1,663 calls had
+unparseable arguments, 39 gold calls violated their own schema</td>
+<td>Dropped all three classes rather than "fixing" them; per-tool cap of
+40 so loan/BMI/password generators don't dominate (see the data
+card)</td>
+</tr>
+<tr class="odd">
+<td>3</td>
+<td><strong>Too few natural declines</strong> (217) for a meaningful
+refusal metric</td>
+<td>Refusal correctness would rest on a handful of examples</td>
+<td>Added <em>tool-swap negatives</em>: real requests paired with tools
+from a different example, labelled <code>{"tool": null}</code>; 20%
+declines in every split</td>
+</tr>
+<tr class="even">
+<td>4</td>
+<td><strong>Out of memory on a 7.8 GB shared CPU box</strong></td>
+<td>Qwen2.5-0.5B-Instruct SFT was OOM-killed</td>
+<td>Moved the executed run to SmolLM2-135M-Instruct; kept Qwen3-8B QLoRA
+as the GPU config</td>
+</tr>
+<tr class="odd">
+<td>5</td>
+<td><strong>Still OOM-killed during SFT</strong></td>
+<td>Full-vocab (49k) logits for micro-batch 2 × 640 tokens dominated
+RAM</td>
+<td>Micro-batch 1 + gradient accumulation 8 (same effective batch),
+non-reentrant gradient checkpointing, frozen base held in bf16 during
+training only</td>
+</tr>
+<tr class="even">
+<td>6</td>
+<td><strong>Kills mid-run lost work</strong></td>
+<td>Each OOM/reboot restarted evaluation and training from zero</td>
+<td>Made every stage resumable: eval writes a per-chunk cache, SFT/DPO
+save LoRA checkpoints and resume from the last one, the pipeline skips
+stages whose artefact exists, and a supervisor loop re-launches it. SFT
+in this run really was resumed from <code>checkpoint-20</code> after the
+sandbox rebooted</td>
+</tr>
+<tr class="odd">
+<td>7</td>
+<td><strong>Decoding was pathologically slow</strong></td>
+<td>Profiling showed ~80% of forward time inside PyTorch's CPU SDPA
+kernel on this aarch64 box</td>
+<td><code>attn_implementation: eager</code></td>
+</tr>
+<tr class="even">
+<td>8</td>
+<td><strong>bf16 decoding was <em>slower</em> than fp32 on
+CPU</strong></td>
+<td>Timed both</td>
+<td>Evaluate in fp32, train with a bf16 frozen base; generation stops
+per row as soon as the JSON object closes instead of always running
+<code>max_new_tokens</code>; LoRA merged into the base weights for
+inference</td>
+</tr>
+<tr class="odd">
+<td>9</td>
+<td><strong>Zero-shot looked like 0% across the board</strong></td>
+<td>The base model echoed the schema
+(<code>"parameters": {"type": "object", ...}</code>) or wrapped JSON in
+prose</td>
+<td>That <em>is</em> the honest zero-shot number; it is why the
+engineered few-shot prompt is the real baseline to beat</td>
+</tr>
+<tr class="even">
+<td>10</td>
+<td><strong>Groq free-tier rate limits</strong> on the strong-model
+reference</td>
+<td>A full 600-example run was not practical</td>
+<td>Ran it on the same 100 test examples as the local stages, with
+retry/backoff and a resumable prediction cache</td>
+</tr>
+<tr class="odd">
+<td>11</td>
+<td><strong>The strong model "failed" on dataset quirks</strong></td>
+<td>gpt-oss-120b missed 8/100 exact matches</td>
+<td>Read all 8: 7 are label conventions (empty-string fillers, invented
+defaults, the year 2022), not model errors — documented in
+<code>results/cpu_small/groq_error_analysis.md</code></td>
+</tr>
+<tr class="even">
+<td>12</td>
+<td><strong>CPU time budget for DPO</strong></td>
+<td>After a reboot the shared host ran with ~40–50% CPU steal; SFT steps
+went from ~50 s to ~2–4 min and evaluating 100 examples took ~25
+min</td>
+<td>Cut DPO from 64 to 32 prompts (still 4 samples each, scorer-labelled
+→ 29 pairs) and used effective batch 2 so the run still has 15 optimizer
+steps; the GPU configs use 1,000 (A100) / 300 (T4) prompts</td>
+</tr>
+<tr class="odd">
+<td>13</td>
+<td><strong>DPO crashed on start-up</strong>:
+<code>KeyError: "attribute 'train' already exists"</code></td>
+<td>I had named the trainable copy of the SFT adapter
+<code>"train"</code>; PEFT registers adapters as sub-modules, and
+<code>train</code> is already a method on every
+<code>nn.Module</code></td>
+<td>Renamed the adapters <code>policy</code> / <code>reference</code>
+(TRL's <code>model_adapter_name</code> /
+<code>ref_adapter_name</code>)</td>
+</tr>
+<tr class="even">
+<td>14</td>
+<td><strong>The sandbox rebooted twice</strong> — once mid-SFT, once
+with the SFT+DPO evaluation at 96/100</td>
+<td>Processes and <code>/tmp</code> (including the virtualenv) were
+wiped</td>
+<td>Virtualenv moved to persistent storage with a one-command rebuild
+script; thanks to item 6 the SFT resumed from step 20 and the evaluation
+finished only the last 4 examples</td>
+</tr>
+<tr class="odd">
+<td>15</td>
+<td><strong>DPO did not improve exact match</strong></td>
+<td>79/100 predictions identical to SFT; false declines 3 → 0 but 2
+outputs became invalid JSON</td>
+<td>Diagnosed rather than tuned for the test set: the automatically
+labelled pairs almost never had a decline as the chosen answer (2 of
+29), so DPO had nothing to teach about the SFT model's real failure (0%
+decline recall). Reported as is; the fix belongs in pair construction
+(Future work)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Lessons I'd keep:</strong> measure the prompt baseline first
+(the zero-shot 0% would have made any fine-tune look miraculous); make
+every long CPU/GPU job resumable from day one; and inspect the
+preference pairs before training on them — their composition predicted
+the DPO outcome better than the loss curve did.</p>
+<h2 id="8-reproduce">8. Reproduce</h2>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co"># CPU (what was run here)</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> install                       <span class="co"># CPU torch wheel + pinned deps</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> data                          <span class="co"># downloads the pinned raw file (~271 MB) and rebuilds data/processed</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> pipeline CONFIG=configs/cpu_small.yaml</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> test lint</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="co"># GPU, Qwen3-8B QLoRA (not executed here)</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> install-gpu</span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> pipeline CONFIG=configs/gpu_qwen3_8b.yaml</span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="co"># optional strong-model reference (needs GROQ_API_KEY)</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> groq CONFIG=configs/cpu_small.yaml</span></code></pre></div>
+<ul>
+<li><strong>Colab:</strong> open
+<code>notebooks/train_colab.ipynb</code> on a free T4; it runs the same
+modules with <code>configs/colab_t4_qwen3_8b.yaml</code> (or
+<code>colab_t4_small.yaml</code> for a quick run).</li>
+<li><strong>Axolotl:</strong>
+<code>python -m toolcall_ft.export_axolotl</code> then
+<code>accelerate launch -m axolotl.cli.train configs/axolotl/sft_qwen3_8b_qlora.yaml</code>
+(and the DPO YAML after <code>build_dpo_pairs</code>).</li>
+<li><strong>Logging:</strong> TensorBoard by default
+(<code>outputs/&lt;run&gt;/tb</code>), CSV + JSON curves in
+<code>results/&lt;run&gt;/</code>, PNG plots via
+<code>make report</code>. Add <code>wandb</code> to
+<code>report_to</code> in the YAML for Weights &amp; Biases.</li>
+<li><strong>Reproducibility:</strong> every stage is config-driven
+(YAML), seed 42 everywhere (data split, sampling, trainer), dataset
+pinned to a revision, versions pinned in <code>requirements.txt</code>.
+Stages are resumable (eval caches, trainer checkpoints), which mattered
+here — see section 7.</li>
+</ul>
+<h3 id="repository-layout">Repository layout</h3>
+<pre class="text"><code>configs/            cpu_small (executed) · gpu_qwen3_8b · colab_t4_* · axolotl/
+data/processed/     train/val/test JSONL + stats.json (committed, ~3 MB)     data/DATA_CARD.md
+src/toolcall_ft/    data · prompts · scorer · evaluate · train_sft · build_dpo_pairs · train_dpo · report · groq_reference · export_axolotl
+scripts/            run_pipeline.sh (resumable end-to-end runner)
+results/cpu_small/  metrics_*.json · predictions_*.jsonl · *_curve.csv · plots/*.png · results_table.md
+notebooks/          train_colab.ipynb
+tests/              data processing + scorer (pytest)
+outputs/            adapters, checkpoints, TensorBoard (git-ignored)</code></pre>
+<h2 id="9-future-work">9. Future work</h2>
+<ul>
+<li><strong>Run the GPU config for real.</strong>
+<code>configs/gpu_qwen3_8b.yaml</code> (Qwen3-8B, 4-bit QLoRA r=16, the
+full 3,000-example train split for 2 epochs, 1,000 DPO prompts, the full
+600-example test set) is the version that answers the actual question;
+the CPU run only proves the pipeline end to end.
+<code>colab_t4_qwen3_8b.yaml</code> is the free-T4 variant. Neither has
+been executed, so no numbers are claimed for them.</li>
+<li><strong>Clean the labels before training, not just the
+outputs.</strong> The Groq error analysis shows exact match on glaive
+partly measures agreement with dataset quirks (empty-string fillers,
+invented defaults, the year 2022). Next step: drop empty-string
+arguments, drop gold arguments that are not in the request, and re-date
+relative dates, then re-score every stage on the normalised test set
+alongside the raw one.</li>
+<li><strong>Better preference data, aimed at the measured
+failure.</strong> The SFT model never declines (0/26), yet only 2 of 29
+DPO pairs had a decline as the chosen answer. Next run: oversample
+gold-decline prompts when building pairs, add (gold decline ≻ the
+model's confident call) pairs for every tool-swap negative, and use more
+prompts and 8+ samples per prompt. Both outputs that DPO turned invalid
+are repetition loops (<code>[5, "cube", 5, "cube", ...]</code>, a run of
+zeros) cut off at the token limit; adding an SFT term to the DPO loss
+(TRL's <code>rpo_alpha</code>) is the standard guard against that
+drift.</li>
+<li><strong>Fix the SFT decline gap directly.</strong> Upweight or
+oversample declines in SFT, or add a short "no tool fits" rationale
+token, and check decline recall on the validation set during training
+rather than only at the end.</li>
+<li><strong>Try the alternatives to plain DPO</strong> that TRL already
+ships: IPO / <code>loss_type="robust"</code> for noisy automatic labels,
+KTO (works from single good/bad labels, no pairs needed), and ORPO (SFT
++ preference in one stage).</li>
+<li><strong>Constrained decoding as a baseline.</strong>
+Grammar/JSON-schema-constrained generation (e.g. Outlines or llama.cpp
+grammars) fixes JSON validity without training; the honest comparison is
+fine-tuned vs. constrained prompting vs. both.</li>
+<li><strong>Multi-turn and parallel calls.</strong> This project scores
+one decision per example. Real agents need the follow-up turn after a
+tool result, parallel calls, and clarifying questions (dropped here as
+ambiguous).</li>
+<li><strong>Confidence intervals.</strong> With 100 test examples a
+1-example change is 1 point; bootstrap CIs over the full 600-example
+test set (GPU run) would make stage-to-stage differences
+defensible.</li>
+<li><strong>Serve it.</strong> Merge the adapter, export to GGUF, and
+put it behind the same function-calling interface the agent project
+uses, so the latency/quality trade-off vs. a hosted model can be
+measured.</li>
+</ul>
+<h2 id="license">License</h2>
+<p>MIT © 2026 Rakesh Burla. The processed data is derived from
+glaive-function-calling-v2 (Apache-2.0).</p>
+</main>
+<footer><div class="wrap">© 2026 Rakesh Burla · MIT License · <a href="https://github.com/burlarakesh1458-sys/toolcall-finetune-sft-dpo">https://github.com/burlarakesh1458-sys/toolcall-finetune-sft-dpo</a></div></footer>
+<script type="module">import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";mermaid.initialize({startOnLoad:true,theme:"default"});</script>
+</body></html>
