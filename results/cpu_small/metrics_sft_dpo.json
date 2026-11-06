@@ -1,0 +1,14 @@
+{
+  "n": 100,
+  "json_valid": 0.96,
+  "exact_match": 0.34,
+  "tool_acc": 0.71,
+  "arg_f1": 0.7058823529411765,
+  "refusal_acc": 0.71,
+  "refusal_recall": 0.0,
+  "false_refusal": 0.0,
+  "exact_match_calls": 0.4594594594594595,
+  "seconds": 628.9,
+  "stage": "sft_dpo",
+  "model": "HuggingFaceTB/SmolLM2-135M-Instruct"
+}

@@ -1,0 +1,12 @@
+{
+  "has_error": 29,
+  "gold_anchored": 14,
+  "all_exact": 3,
+  "no_pair": 3,
+  "pairs": 29,
+  "sampling_seconds": 1972.1,
+  "prompts": 32,
+  "samples_per_prompt": 4,
+  "sample_exact_rate": 0.2578,
+  "sample_invalid_json_rate": 0.1562
+}

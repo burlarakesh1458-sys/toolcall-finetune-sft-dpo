@@ -1,0 +1,15 @@
+{
+  "n": 100,
+  "json_valid": 1.0,
+  "exact_match": 0.92,
+  "tool_acc": 0.99,
+  "arg_f1": 0.9363057324840764,
+  "refusal_acc": 0.99,
+  "refusal_recall": 1.0,
+  "false_refusal": 0.013513513513513514,
+  "exact_match_calls": 0.8918918918918919,
+  "stage": "groq_reference",
+  "model": "openai/gpt-oss-120b",
+  "full_split_n": 100,
+  "full_split_exact_match": 0.92
+}

@@ -1,0 +1,10 @@
+{
+  "train_examples": 240,
+  "val_examples": 24,
+  "train_seconds": 1664.4,
+  "global_steps": 30,
+  "trainable_params": 4884480,
+  "total_params": 139399488,
+  "note": "train_seconds covers only steps 21-30: the run was resumed from checkpoint-20 after a sandbox reboot (steps 1-20 took ~21 min in the first process). The host showed ~40-60% CPU steal during the resumed part.",
+  "resumed_from_step": 20
+}
