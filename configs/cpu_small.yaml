@@ -1,0 +1,66 @@
+# CPU small-scale run: the configuration actually executed for the numbers in results/cpu_small.
+# Tiny model, full-precision LoRA (bitsandbytes 4-bit needs a GPU), short sequences.
+run_name: cpu_small
+seed: 42
+output_dir: outputs/cpu_small        # adapters/checkpoints (git-ignored)
+results_dir: results/cpu_small       # metrics, predictions, curves (committed)
+
+model:
+  base: HuggingFaceTB/SmolLM2-135M-Instruct
+  dtype: float32
+  attn_implementation: eager   # torch's CPU SDPA kernel was pathologically slow on this aarch64 box (see README)
+  load_in_4bit: false
+
+data:
+  raw_path: data/raw/glaive-function-calling-v2.json   # git-ignored, ~271 MB
+  dir: data/processed
+  total: 4000
+  refusal_frac: 0.2
+  synthetic_negative_frac: 0.5
+  val_size: 400
+  test_size: 600
+  max_tools_chars: 1200
+  max_per_tool: 40
+  # subsets used by this config (CPU budget); the GPU config uses the full splits
+  train_limit: 240
+  val_limit: 24
+  test_limit: 100
+  max_length: 640
+
+eval:
+  batch_size: 8
+  max_new_tokens: 72        # gold targets: median 29 tokens, p95 58; decoding stops early once the JSON closes
+
+sft:
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+  num_train_epochs: 1
+  learning_rate: 2.0e-4
+  per_device_train_batch_size: 2     # small micro-batch: full-vocab logits dominate RAM on CPU
+  gradient_accumulation_steps: 4
+  warmup_ratio: 0.05
+  lr_scheduler_type: cosine
+  logging_steps: 2
+  eval_steps: 6
+  gradient_checkpointing: false
+  bf16: false
+
+dpo:
+  n_prompts: 64             # train prompts sampled for preference pairs
+  n_samples: 4              # generations per prompt from the SFT model
+  temperature: 1.0
+  top_p: 0.95
+  gold_anchor: true         # if no sample is exact, use the gold answer as "chosen"
+  beta: 0.1
+  learning_rate: 5.0e-5
+  num_train_epochs: 1
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 4
+  max_length: 640
+  max_prompt_length: 576
+  logging_steps: 2
+  bf16: false
+
+report_to: [tensorboard]    # add "wandb" to log to Weights & Biases

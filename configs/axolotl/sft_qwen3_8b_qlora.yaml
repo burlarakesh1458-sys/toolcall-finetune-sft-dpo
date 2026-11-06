@@ -1,0 +1,49 @@
+# Axolotl equivalent of configs/gpu_qwen3_8b.yaml (SFT phase). NOT EXECUTED here.
+# 1) python -m toolcall_ft.export_axolotl   -> writes data/axolotl/{sft_train,sft_val}.jsonl
+# 2) accelerate launch -m axolotl.cli.train configs/axolotl/sft_qwen3_8b_qlora.yaml
+base_model: Qwen/Qwen3-8B
+load_in_4bit: true
+adapter: qlora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target_linear: true          # q,k,v,o,gate,up,down
+
+chat_template: tokenizer_default
+datasets:
+  - path: data/axolotl/sft_train.jsonl
+    type: chat_template
+    field_messages: messages
+    roles_to_train: ["assistant"]  # loss only on the JSON answer
+    train_on_eos: turn
+test_datasets:
+  - path: data/axolotl/sft_val.jsonl
+    type: chat_template
+    field_messages: messages
+    roles_to_train: ["assistant"]
+    split: train
+
+sequence_len: 1024
+sample_packing: false
+pad_to_sequence_len: false
+
+num_epochs: 2
+micro_batch_size: 4
+gradient_accumulation_steps: 4
+learning_rate: 0.0002
+lr_scheduler: cosine
+warmup_ratio: 0.03
+optimizer: paged_adamw_8bit
+bf16: auto
+tf32: true
+gradient_checkpointing: true
+flash_attention: false
+sdp_attention: true
+
+eval_steps: 50
+logging_steps: 5
+save_strategy: "no"
+seed: 42
+output_dir: outputs/axolotl/sft_qwen3_8b
+use_tensorboard: true
+# wandb_project: toolcall-ft

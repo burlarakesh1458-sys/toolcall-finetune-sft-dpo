@@ -1,0 +1,41 @@
+# Axolotl equivalent of the DPO phase (stacked on the SFT adapter). NOT EXECUTED here.
+# Needs outputs/<run>/dpo_pairs.jsonl from `python -m toolcall_ft.build_dpo_pairs`, then
+#   python -m toolcall_ft.export_axolotl --dpo outputs/gpu_qwen3_8b/dpo_pairs.jsonl
+#   accelerate launch -m axolotl.cli.train configs/axolotl/dpo_qwen3_8b_qlora.yaml
+base_model: Qwen/Qwen3-8B
+load_in_4bit: true
+adapter: qlora
+lora_model_dir: outputs/axolotl/sft_qwen3_8b   # continue from the SFT adapter
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target_linear: true
+
+rl: dpo
+rl_beta: 0.1
+chat_template: tokenizer_default
+datasets:
+  - path: data/axolotl/dpo_pairs.jsonl
+    type: chat_template.default
+    field_messages: messages
+    field_chosen: chosen
+    field_rejected: rejected
+    message_property_mappings:
+      role: role
+      content: content
+
+sequence_len: 1024
+num_epochs: 1
+micro_batch_size: 2
+gradient_accumulation_steps: 8
+learning_rate: 0.000005
+lr_scheduler: cosine
+warmup_ratio: 0.1
+optimizer: paged_adamw_8bit
+bf16: auto
+gradient_checkpointing: true
+logging_steps: 5
+save_strategy: "no"
+seed: 42
+output_dir: outputs/axolotl/dpo_qwen3_8b
+use_tensorboard: true

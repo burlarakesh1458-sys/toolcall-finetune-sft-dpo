@@ -1,0 +1,68 @@
+# GPU config: Qwen3-8B + QLoRA (4-bit NF4). READY TO RUN ON GPU — NOT EXECUTED in this repo.
+# Fits a single A100-40GB comfortably; on a 16 GB T4 use configs/gpu_t4_qwen3_8b.yaml-style overrides
+# (batch 1, grad-accum 16, max_length 1024, gradient checkpointing) — see README.
+run_name: gpu_qwen3_8b
+seed: 42
+output_dir: outputs/gpu_qwen3_8b
+results_dir: results/gpu_qwen3_8b
+
+model:
+  base: Qwen/Qwen3-8B
+  dtype: bfloat16
+  compute_dtype: bfloat16      # use float16 on T4 (no bf16 support)
+  load_in_4bit: true
+  attn_implementation: sdpa
+  chat_template_kwargs: {enable_thinking: false}   # Qwen3: no <think> block for this task
+
+data:
+  raw_path: data/raw/glaive-function-calling-v2.json
+  dir: data/processed
+  total: 4000
+  refusal_frac: 0.2
+  synthetic_negative_frac: 0.5
+  val_size: 400
+  test_size: 600
+  max_tools_chars: 1200
+  max_per_tool: 40
+  train_limit: null            # full 3,000-example train split
+  val_limit: 200
+  test_limit: null             # full 600-example test split
+  max_length: 1024
+
+eval:
+  batch_size: 16
+  max_new_tokens: 160
+
+sft:
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+  num_train_epochs: 2
+  learning_rate: 2.0e-4
+  per_device_train_batch_size: 4
+  gradient_accumulation_steps: 4
+  warmup_ratio: 0.03
+  lr_scheduler_type: cosine
+  logging_steps: 5
+  eval_steps: 50
+  gradient_checkpointing: true
+  bf16: true
+
+dpo:
+  n_prompts: 1000
+  n_samples: 4
+  temperature: 1.0
+  top_p: 0.95
+  gold_anchor: true
+  beta: 0.1
+  learning_rate: 5.0e-6
+  num_train_epochs: 1
+  per_device_train_batch_size: 2
+  gradient_accumulation_steps: 8
+  max_length: 1024
+  max_prompt_length: 896
+  logging_steps: 5
+  bf16: true
+
+report_to: [tensorboard]

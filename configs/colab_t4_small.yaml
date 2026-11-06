@@ -1,0 +1,67 @@
+# Quick Colab T4 config: Qwen2.5-0.5B-Instruct, plain LoRA in fp16 (no 4-bit needed). NOT EXECUTED here.
+run_name: colab_t4_small
+seed: 42
+output_dir: outputs/colab_t4_small
+results_dir: results/colab_t4_small
+
+model:
+  base: Qwen/Qwen2.5-0.5B-Instruct
+  dtype: float32           # fp32 master weights; fp16 autocast via sft.fp16
+  compute_dtype: float16
+  load_in_4bit: false
+  attn_implementation: sdpa
+
+data:
+  raw_path: data/raw/glaive-function-calling-v2.json
+  dir: data/processed
+  total: 4000
+  refusal_frac: 0.2
+  synthetic_negative_frac: 0.5
+  val_size: 400
+  test_size: 600
+  max_tools_chars: 1200
+  max_per_tool: 40
+  train_limit: 2000
+  val_limit: 100
+  test_limit: 300
+  max_length: 896
+
+eval:
+  batch_size: 8
+  max_new_tokens: 128
+
+sft:
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+  num_train_epochs: 1
+  learning_rate: 2.0e-4
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 16
+  warmup_ratio: 0.03
+  lr_scheduler_type: cosine
+  logging_steps: 5
+  eval_steps: 40
+  gradient_checkpointing: true
+  bf16: false
+  fp16: true
+
+dpo:
+  n_prompts: 300
+  n_samples: 4
+  temperature: 1.0
+  top_p: 0.95
+  gold_anchor: true
+  beta: 0.1
+  learning_rate: 5.0e-6
+  num_train_epochs: 1
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 8
+  max_length: 896
+  max_prompt_length: 768
+  logging_steps: 2
+  bf16: false
+  fp16: true
+
+report_to: [tensorboard]
