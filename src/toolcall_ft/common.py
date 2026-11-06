@@ -78,6 +78,10 @@ def load_model(cfg: dict[str, Any], adapter: str | Path | None = None, trainable
         from peft import PeftModel
 
         model = PeftModel.from_pretrained(model, str(adapter), is_trainable=trainable)
+        if not trainable and not mcfg.get("load_in_4bit"):
+            # Inference only: fold the LoRA deltas into the base weights so decoding runs
+            # plain linear layers (no extra adapter matmuls). Not done for 4-bit bases.
+            model = model.merge_and_unload()
     if not trainable:
         model.eval()
     return model
