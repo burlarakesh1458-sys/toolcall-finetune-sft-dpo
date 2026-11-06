@@ -54,7 +54,7 @@ def main() -> None:
             done[r["id"]] = r
     todo = [i for i, e in enumerate(examples) if e["id"] not in done]
     todo.sort(key=lambda i: len(json.dumps(msgs[i])))
-    chunk = ecfg["batch_size"] * 2
+    chunk = ecfg["batch_size"]
     print(f"  {len(done)} cached, {len(todo)} to generate", flush=True)
     for c in range(0, len(todo), chunk):
         idx = todo[c : c + chunk]

@@ -57,7 +57,10 @@ def load_model(cfg: dict[str, Any], adapter: str | Path | None = None, trainable
     from transformers import AutoModelForCausalLM
 
     mcfg = cfg["model"]
-    kwargs: dict[str, Any] = {"dtype": torch_dtype(mcfg.get("dtype", "float32"))}
+    # ``train_dtype`` lets training hold the frozen base in a smaller dtype than evaluation
+    # (the LoRA adapter itself is kept in fp32 by PEFT either way).
+    dtype = mcfg.get("train_dtype", mcfg.get("dtype", "float32")) if trainable else mcfg.get("dtype", "float32")
+    kwargs: dict[str, Any] = {"dtype": torch_dtype(dtype)}
     if mcfg.get("load_in_4bit"):
         from transformers import BitsAndBytesConfig
 

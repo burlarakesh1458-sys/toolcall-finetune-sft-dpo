@@ -8,6 +8,7 @@ results_dir: results/cpu_small       # metrics, predictions, curves (committed)
 model:
   base: HuggingFaceTB/SmolLM2-135M-Instruct
   dtype: float32
+  train_dtype: bfloat16        # frozen base in bf16 during SFT/DPO to fit the shared 7 GB box (OOM kills otherwise)
   attn_implementation: eager   # torch's CPU SDPA kernel was pathologically slow on this aarch64 box (see README)
   load_in_4bit: false
 
@@ -38,13 +39,13 @@ sft:
   target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
   num_train_epochs: 1
   learning_rate: 2.0e-4
-  per_device_train_batch_size: 2     # small micro-batch: full-vocab logits dominate RAM on CPU
-  gradient_accumulation_steps: 4
+  per_device_train_batch_size: 1     # micro-batch 1: full-vocab (49k) logits dominate RAM on CPU
+  gradient_accumulation_steps: 8     # effective batch 8
   warmup_ratio: 0.05
   lr_scheduler_type: cosine
   logging_steps: 2
   eval_steps: 6
-  gradient_checkpointing: false
+  gradient_checkpointing: true      # trades ~30% compute for activation memory (OOM kills otherwise)
   bf16: false
 
 dpo:
@@ -58,6 +59,7 @@ dpo:
   num_train_epochs: 1
   per_device_train_batch_size: 1
   gradient_accumulation_steps: 4
+  gradient_checkpointing: true
   max_length: 640
   max_prompt_length: 576
   logging_steps: 2

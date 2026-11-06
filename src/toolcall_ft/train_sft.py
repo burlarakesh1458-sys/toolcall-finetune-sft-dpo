@@ -68,6 +68,7 @@ def main() -> None:
         max_length=d["max_length"],
         completion_only_loss=True,  # loss only on the assistant JSON
         gradient_checkpointing=s.get("gradient_checkpointing", False),
+        gradient_checkpointing_kwargs={"use_reentrant": False},
         bf16=s.get("bf16", False),
         fp16=s.get("fp16", False),
         report_to=cfg.get("report_to", ["tensorboard"]),

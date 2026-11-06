@@ -61,6 +61,8 @@ def main() -> None:
         max_prompt_length=p["max_prompt_length"],
         logging_steps=p["logging_steps"],
         lr_scheduler_type="cosine",
+        gradient_checkpointing=p.get("gradient_checkpointing", False),
+        gradient_checkpointing_kwargs={"use_reentrant": False},
         warmup_ratio=0.1,
         save_strategy="steps",
         save_steps=p.get("save_steps", 8),
