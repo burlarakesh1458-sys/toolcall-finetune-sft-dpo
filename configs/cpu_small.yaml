@@ -49,7 +49,7 @@ sft:
   bf16: false
 
 dpo:
-  n_prompts: 64             # train prompts sampled for preference pairs
+  n_prompts: 32             # train prompts sampled for preference pairs (cut from 64: CPU time budget, see README §7)
   n_samples: 4              # generations per prompt from the SFT model
   temperature: 1.0
   top_p: 0.95
@@ -58,11 +58,11 @@ dpo:
   learning_rate: 5.0e-5
   num_train_epochs: 1
   per_device_train_batch_size: 1
-  gradient_accumulation_steps: 4
+  gradient_accumulation_steps: 2     # effective batch 2: few pairs, so more optimizer steps / curve points
   gradient_checkpointing: true
   max_length: 640
   max_prompt_length: 576
-  logging_steps: 2
+  logging_steps: 1
   bf16: false
 
 report_to: [tensorboard]    # add "wandb" to log to Weights & Biases

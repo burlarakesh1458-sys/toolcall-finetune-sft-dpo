@@ -1,6 +1,6 @@
 """Phase 2b: DPO on top of the SFT adapter (stacked training).
 
-The SFT adapter is loaded twice: once as the trainable policy ("train") and once,
+The SFT adapter is loaded twice: once as the trainable policy ("policy"; not "train", which clashes with nn.Module.train) and once,
 frozen, as the reference ("reference"). This works identically for a full-precision
 base (CPU run) and a 4-bit QLoRA base (GPU run) and needs no merge.
 
@@ -46,9 +46,9 @@ def main() -> None:
     base = load_model(cfg, trainable=True)
     if cfg["model"].get("load_in_4bit"):
         base = prepare_model_for_kbit_training(base, use_gradient_checkpointing=True)
-    model = PeftModel.from_pretrained(base, str(out_dir / "sft_adapter"), adapter_name="train", is_trainable=True)
+    model = PeftModel.from_pretrained(base, str(out_dir / "sft_adapter"), adapter_name="policy", is_trainable=True)
     model.load_adapter(str(out_dir / "sft_adapter"), adapter_name="reference")
-    model.set_adapter("train")
+    model.set_adapter("policy")
 
     dpo_args = DPOConfig(
         output_dir=str(out_dir / "dpo_ckpt"),
@@ -69,7 +69,7 @@ def main() -> None:
         save_total_limit=1,
         bf16=p.get("bf16", False),
         fp16=p.get("fp16", False),
-        model_adapter_name="train",
+        model_adapter_name="policy",
         ref_adapter_name="reference",
         report_to=cfg.get("report_to", ["tensorboard"]),
         logging_dir=str(out_dir / "tb" / "dpo"),
@@ -87,10 +87,10 @@ def main() -> None:
     elapsed = time.time() - t0
 
     # Save only the trained policy adapter.
-    trainer.model.save_pretrained(str(out_dir / "dpo_tmp"), selected_adapters=["train"])
+    trainer.model.save_pretrained(str(out_dir / "dpo_tmp"), selected_adapters=["policy"])
     import shutil
 
-    src = out_dir / "dpo_tmp" / "train"
+    src = out_dir / "dpo_tmp" / "policy"
     dst = out_dir / "dpo_adapter"
     if dst.exists():
         shutil.rmtree(dst)
