@@ -1,0 +1,38 @@
+{
+  "source": "glaiveai/glaive-function-calling-v2@e7f4b6456019f5d8bcb991ef0dd67d8ff23221ac",
+  "raw_records_scanned": 112960,
+  "filter_reasons": {
+    "kept": 6434,
+    "clarification_or_chat": 25520,
+    "no_tools": 34598,
+    "duplicate": 44314,
+    "unparseable_call": 1663,
+    "dup_tool_names": 351,
+    "too_long": 20,
+    "invalid_call": 39,
+    "bad_schema": 17,
+    "bad_turns": 4,
+    "per_tool_cap": 2315
+  },
+  "pool_calls_after_dedupe": 6217,
+  "pool_calls_after_tool_cap": 3902,
+  "pool_natural_refusals": 217,
+  "final_counts": {
+    "calls": 3200,
+    "natural_refusals": 217,
+    "synthetic_negatives": 583
+  },
+  "split_sizes": {
+    "train": 3000,
+    "val": 400,
+    "test": 600
+  },
+  "split_refusal_rate": {
+    "train": 0.2,
+    "val": 0.2,
+    "test": 0.2
+  },
+  "unique_tool_names": 610,
+  "avg_tools_per_example": 1.263,
+  "seed": 42
+}
