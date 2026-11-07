@@ -24,6 +24,18 @@ footer{border-top:1px solid var(--line);color:var(--mut);padding:20px 0;font-siz
 <main class="wrap"><h1
 id="fine-tuning-for-tool-call-accuracy-prompt-baseline--lora-sft--dpo">Fine-tuning
 for tool-call accuracy: prompt baseline → LoRA SFT → DPO</h1>
+<!-- links -->
+
+<p><a
+href="https://github.com/burlarakesh1458-sys/toolcall-finetune-sft-dpo/actions/workflows/ci.yml"><img
+src="https://github.com/burlarakesh1458-sys/toolcall-finetune-sft-dpo/actions/workflows/ci.yml/badge.svg"
+alt="CI" /></a> <strong>Live demo:</strong> <a
+href="http://rakeshburla.dpdns.org/toolcall-finetune-sft-dpo/">http://rakeshburla.dpdns.org/toolcall-finetune-sft-dpo/</a>
+· <strong>Code:</strong> <a
+href="https://github.com/burlarakesh1458-sys/toolcall-finetune-sft-dpo">https://github.com/burlarakesh1458-sys/toolcall-finetune-sft-dpo</a>
+· <strong>Resume bullets:</strong> <a
+href="https://github.com/burlarakesh1458-sys/toolcall-finetune-sft-dpo/blob/main/RESUME_BULLETS.md">RESUME_BULLETS.md</a> ·
+<strong>License:</strong> MIT</p>
 <blockquote>
 <p>Teach a language model to pick the right function
 <strong>and</strong> fill its arguments correctly — or decline when no
@@ -493,26 +505,33 @@ class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="
 <span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> install-gpu</span>
 <span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> pipeline CONFIG=configs/gpu_qwen3_8b.yaml</span>
 <span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="co"># optional strong-model reference (needs GROQ_API_KEY)</span></span>
-<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> groq CONFIG=configs/cpu_small.yaml</span></code></pre></div>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> groq CONFIG=configs/cpu_small.yaml</span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a><span class="co"># Docker (CPU): same pipeline in a pinned image; results/ and outputs/ are mounted back to the host</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> build <span class="at">-t</span> toolcall-ft .</span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">--rm</span> <span class="at">-v</span> <span class="st">&quot;</span><span class="va">$PWD</span><span class="st">/results:/app/results&quot;</span> <span class="at">-v</span> <span class="st">&quot;</span><span class="va">$PWD</span><span class="st">/outputs:/app/outputs&quot;</span> toolcall-ft</span></code></pre></div>
 <ul>
-<li><strong>Colab:</strong> open
+<li><p><strong>CI:</strong> GitHub Actions runs ruff, the 21 offline
+tests (scorer, data prep, prompt building; no GPU, no API key) and
+builds the CPU Docker image on every push.</p></li>
+<li><p><strong>Colab:</strong> open
 <code>notebooks/train_colab.ipynb</code> on a free T4; it runs the same
 modules with <code>configs/colab_t4_qwen3_8b.yaml</code> (or
-<code>colab_t4_small.yaml</code> for a quick run).</li>
-<li><strong>Axolotl:</strong>
+<code>colab_t4_small.yaml</code> for a quick run).</p></li>
+<li><p><strong>Axolotl:</strong>
 <code>python -m toolcall_ft.export_axolotl</code> then
 <code>accelerate launch -m axolotl.cli.train configs/axolotl/sft_qwen3_8b_qlora.yaml</code>
-(and the DPO YAML after <code>build_dpo_pairs</code>).</li>
-<li><strong>Logging:</strong> TensorBoard by default
+(and the DPO YAML after <code>build_dpo_pairs</code>).</p></li>
+<li><p><strong>Logging:</strong> TensorBoard by default
 (<code>outputs/&lt;run&gt;/tb</code>), CSV + JSON curves in
 <code>results/&lt;run&gt;/</code>, PNG plots via
 <code>make report</code>. Add <code>wandb</code> to
-<code>report_to</code> in the YAML for Weights &amp; Biases.</li>
-<li><strong>Reproducibility:</strong> every stage is config-driven
+<code>report_to</code> in the YAML for Weights &amp; Biases.</p></li>
+<li><p><strong>Reproducibility:</strong> every stage is config-driven
 (YAML), seed 42 everywhere (data split, sampling, trainer), dataset
 pinned to a revision, versions pinned in <code>requirements.txt</code>.
 Stages are resumable (eval caches, trainer checkpoints), which mattered
-here — see section 7.</li>
+here — see section 7.</p></li>
 </ul>
 <h3 id="repository-layout">Repository layout</h3>
 <pre class="text"><code>configs/            cpu_small (executed) · gpu_qwen3_8b · colab_t4_* · axolotl/

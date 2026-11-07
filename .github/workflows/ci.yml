@@ -1,0 +1,38 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: lint + unit tests (scorer, data, prompts; no GPU, no API key)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-ci.txt
+      - run: pip install -r requirements-ci.txt
+      - run: ruff check src tests
+      - run: ruff format --check src tests
+      - run: pytest -q
+        env: { PYTHONPATH: src }
+
+  docker:
+    name: docker build (CPU)
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t toolcall-ft:ci .
+      - name: image imports the training stack
+        run: docker run --rm toolcall-ft:ci python -c "import torch, transformers, trl, peft, toolcall_ft.scorer; print(torch.__version__, transformers.__version__, trl.__version__, peft.__version__)"

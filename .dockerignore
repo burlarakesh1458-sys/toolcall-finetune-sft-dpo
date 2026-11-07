@@ -1,0 +1,15 @@
+.git
+.github
+outputs
+results
+notebooks
+data/raw
+data/axolotl
+**/__pycache__
+.pytest_cache
+.ruff_cache
+.venv
+venv
+.env
+index.html
+docs

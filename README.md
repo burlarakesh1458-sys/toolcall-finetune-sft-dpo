@@ -1,5 +1,8 @@
 # Fine-tuning for tool-call accuracy: prompt baseline → LoRA SFT → DPO
 
+<!-- links -->
+[![CI](https://github.com/burlarakesh1458-sys/toolcall-finetune-sft-dpo/actions/workflows/ci.yml/badge.svg)](https://github.com/burlarakesh1458-sys/toolcall-finetune-sft-dpo/actions/workflows/ci.yml) **Live demo:** <http://rakeshburla.dpdns.org/toolcall-finetune-sft-dpo/> · **Code:** <https://github.com/burlarakesh1458-sys/toolcall-finetune-sft-dpo> · **Resume bullets:** [RESUME_BULLETS.md](RESUME_BULLETS.md) · **License:** MIT
+
 > Teach a language model to pick the right function **and** fill its arguments correctly — or decline when no
 > tool fits — and prove the gain over the best prompt with numbers on a held-out test set.
 
@@ -190,7 +193,14 @@ make install-gpu
 make pipeline CONFIG=configs/gpu_qwen3_8b.yaml
 # optional strong-model reference (needs GROQ_API_KEY)
 make groq CONFIG=configs/cpu_small.yaml
+
+# Docker (CPU): same pipeline in a pinned image; results/ and outputs/ are mounted back to the host
+docker build -t toolcall-ft .
+docker run --rm -v "$PWD/results:/app/results" -v "$PWD/outputs:/app/outputs" toolcall-ft
 ```
+
+- **CI:** GitHub Actions runs ruff, the 21 offline tests (scorer, data prep, prompt building; no GPU, no API key)
+  and builds the CPU Docker image on every push.
 
 - **Colab:** open `notebooks/train_colab.ipynb` on a free T4; it runs the same modules with
   `configs/colab_t4_qwen3_8b.yaml` (or `colab_t4_small.yaml` for a quick run).

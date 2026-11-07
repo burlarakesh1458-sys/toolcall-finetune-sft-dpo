@@ -1,0 +1,6 @@
+# Minimal pins for the offline test suite (data prep, prompt building, scorer); no torch needed.
+numpy==2.5.4
+PyYAML==6.0.3
+requests==2.34.2
+pytest==9.2.0
+ruff==0.17.4
